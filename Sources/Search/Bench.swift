@@ -1360,6 +1360,28 @@ final class Bench {
                 let r = web.convert(web.bounds, to: nil)
                 out["peekFrame"] = [Int(r.minX), Int(window.frame.height - r.maxY), Int(r.width), Int(r.height)]
             }
+            // How far the peek's page, and the page in front, are drawn from
+            // the screen's pixels: the most any corner of their layers is off
+            // them, WebKit's own under the view included, in pixels. Off them,
+            // a page is drawn resampled, its text soft, though its view's frame
+            // is whole: WebKit sizes its own root layer from where the view is
+            // seen when it comes, and a panel scaling in had it seen between
+            // two pixels.
+            func offGrid(_ web: WKWebView?) -> Double? {
+                guard let top = web?.layer, let window = web?.window,
+                      let root = window.contentView?.superview?.layer else { return nil }
+                let scale = window.backingScaleFactor
+                var most: CGFloat = 0
+                func walk(_ layer: CALayer, depth: Int) {
+                    let r = layer.convert(layer.bounds, to: root)
+                    for v in [r.minX, r.minY, r.maxX, r.maxY] { most = max(most, abs(v * scale - (v * scale).rounded())) }
+                    if depth < 9 { layer.sublayers?.forEach { walk($0, depth: depth + 1) } }
+                }
+                walk(top, depth: 0)
+                return Double(most)
+            }
+            if let off = offGrid(browser.peekTab?.built) { out["peekOffGrid"] = off }
+            if let off = offGrid(browser.active?.built) { out["pageOffGrid"] = off }
             out["folded"] = browser.folded
             out["peeking"] = browser.peeking
             out["sideHides"] = browser.prefs.sideHides

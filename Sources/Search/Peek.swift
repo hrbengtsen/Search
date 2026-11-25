@@ -223,8 +223,14 @@ struct PeekLayer: View {
                     .transition(.opacity)
             }
             if browser.peekInFront, let tab = browser.peekTab {
+                // Fades in, and only shrinks as it goes. Grown into place, its
+                // page was soft until the window next changed size: WebKit
+                // sizes the page's root layer from where the view is seen as
+                // it comes, and seen scaled, that was between two pixels, every
+                // line of text resampled a fraction of a pixel off.
                 PeekPanel(browser: browser, tab: tab)
-                    .transition(.opacity.combined(with: .scale(scale: 0.98)))
+                    .transition(.asymmetric(insertion: .opacity,
+                                            removal: .opacity.combined(with: .scale(scale: 0.98))))
             }
         }
     }
