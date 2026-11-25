@@ -11,7 +11,8 @@ muted background video, a small video or a preview with its sound on, and
 must float a player playing with sound, or muted after it was heard. ⇧⌘P
 still lifts a preview. Then the floated video's source is emptied, its
 player hidden, or the video taken out: the window closes and the page is
-back in its tab, never left black.
+back in its tab, never left black. And one going on to its next video, its
+first data slow to come, keeps the window until it does, or ten seconds.
 """
 import functools
 import shutil
@@ -105,6 +106,14 @@ def main():
     class Quiet(SimpleHTTPRequestHandler):
         def log_message(self, *args):
             pass
+
+        def do_GET(self):
+            # A next video that is slow to come: nothing for half a minute.
+            if self.path.startswith("/slow"):
+                time.sleep(30)
+                self.send_error(404)
+                return
+            super().do_GET()
     server = ThreadingHTTPServer(("127.0.0.1", 0), functools.partial(Quiet, directory=pages))
     threading.Thread(target=server.serve_forever, daemon=True).start()
     out = tempfile.mkdtemp(prefix="search-float-preview-film-")
@@ -175,6 +184,29 @@ def main():
             t.ok(f"{name}: the window stays while it plays, then closes", still and closed is not None and closed < 3.5, (still, closed))
             t.ok(f"{name}: and the page is out of the floating state", back is False, back)
             home(out, tab)
+
+        # The player goes on to its next video, as YouTube's autoplay does:
+        # the same video, a new source, asked to play, its first data a
+        # while coming. The window waits for it, and closes only if it never
+        # comes.
+        fresh(base, tab, "player(960,540,false)")
+        if leave(out, tab):
+            time.sleep(1.5)
+            sv.ev(tab, f"var v=document.querySelector('#player video'); v.srcObject=null; v.src='{base}/slow.mp4'; v.play().catch(function(){{}}); 1")
+            time.sleep(4)
+            waiting = showing()
+            loading = sv.ev(tab, "(function(){var v=document.querySelector('#player video');return !v.paused && v.readyState===0})()")
+            t.ok("the next video loading: the window stays for it", waiting and loading is True, (waiting, loading))
+            closed = None
+            for i in range(100):
+                if not showing():
+                    closed = round(4 + i * 0.1, 1)
+                    break
+                time.sleep(0.1)
+            t.ok("never coming: the window closes after the wait", closed is not None and 9 <= closed <= 13, closed)
+        else:
+            t.ok("the next video loading: floated first", False)
+        home(out, tab)
     finally:
         t.done(); sv.finish()
         server.shutdown()

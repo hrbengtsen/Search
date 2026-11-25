@@ -1222,7 +1222,10 @@ enum Isolate {
     /// nothing after it. YouTube's preview ended and went, and the window
     /// held the page's black (idea 923). A second's grace for a player
     /// swapping one video for the next (Isolate.on puts the mark back), and
-    /// ten after an end, for a player's "up next" to begin.
+    /// ten after an end, for a player's "up next" to begin, and ten while
+    /// the next one, asked to play, waits for its first data: YouTube's
+    /// takes about two seconds after its autoplay, and the window closed
+    /// at one, the next video never playing until you went back to its tab.
     static let gone = """
     (function () {
       if (!document.documentElement.classList.contains('office-floating')) {
@@ -1234,8 +1237,12 @@ enum Isolate {
         return v.isConnected && !v.error && (v.currentSrc || v.srcObject) && v.readyState > 0
           && (art || v.getClientRects().length > 0);
       }
+      // Asked to play, its source set, nothing of it come yet.
+      function loading(v) {
+        return v.isConnected && !v.error && !v.paused && v.readyState === 0 && !!(v.currentSrc || v.srcObject);
+      }
       var v = document.querySelector('video[data-office-float]'), why = null;
-      if (!v || !shows(v)) why = 'gone';
+      if (!v || !shows(v)) why = v && loading(v) ? 'loading' : 'gone';
       else if (v.ended) why = 'ended';
       if (why) {
         var all = document.querySelectorAll('video');
@@ -1247,7 +1254,7 @@ enum Isolate {
       var was = window.__officeFloatGone;
       if (!why) { window.__officeFloatGone = null; return false; }
       if (!was || was.why !== why) { window.__officeFloatGone = { why: why, since: Date.now() }; return false; }
-      return Date.now() - was.since >= (why === 'ended' ? 10000 : 1000);
+      return Date.now() - was.since >= (why === 'gone' ? 1000 : 10000);
     })();
     """
 
