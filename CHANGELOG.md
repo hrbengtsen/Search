@@ -17,6 +17,10 @@ in [ROADMAP.md](ROADMAP.md).
 - Settings › Spaces & Pins › Hide the page behind the field, off unless turned on: ⌘T's and ⌘L's field comes over a plain ground, the page out of sight, instead of the page dimmed and showing through, which some find busy. With The field in the middle of the window too. A plain cover, nothing worked out from the page, so it costs nothing while the page moves. (idea 1061)
 - Settings › Browsing › Return takes the top suggestion, off unless turned on: the place on top of the address field's list is picked as you type, as in Arc's command bar, so Return goes to it instead of searching for the words, with no ↓ first. A page found by a word from its title or the middle of its address was listed on top and still searched. The field keeps what was typed; ↑ lets go of the row and Return searches. A search or a command on top, an address typed out, and one the grey ending finishes go where they went before. In ⌘L, ⌘T, a blank tab and the address in the tab. `swift test --filter ReturnTakesTopTests`, `python3 Tests/return_takes_top.py` ([#1556](https://github.com/driceroland/Search/issues/1556)) Thanks [@danicrg](https://github.com/danicrg) ([#1558](https://github.com/driceroland/Search/pull/1558))
 
+### Changed
+
+- The page under a peek is covered as it is under ⌘T's and ⌘L's field: the window's own light or dark laid over it, in place of a faint grey shade, so the two look like one kind of thing and the peek stands out more, most of all in dark mode. The column and the tabs stay uncovered and in reach, as before. `python3 Tests/peek_crisp.py`
+
 ### Fixed
 
 - A peek's page is as sharp as the same page in a tab. Its text was a little soft until the window next changed size: the panel grew into place, and WebKit, seeing the page scaled as it came, drew it a fraction of a pixel off the screen's. The panel now fades in, and still shrinks as it goes. `python3 Tests/peek_crisp.py`
