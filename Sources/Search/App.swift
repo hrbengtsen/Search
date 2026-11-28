@@ -1863,13 +1863,16 @@ struct ContentView: View {
     }
 
     /// Whether the caret is in something editable: the address field or a
-    /// panel's, or a text box on the page. The page's own word on typing
-    /// misses a click straight into a frame and never reaches into another
-    /// site's, such as an embedded comment box; the web view has an input
-    /// context while the caret is in something editable, in any frame.
+    /// panel's, or a text box on the page, the peek's while it is in front.
+    /// The page's own word on typing misses a click straight into a frame
+    /// and never reaches into another site's, such as an embedded comment
+    /// box; the web view has an input context while the caret is in
+    /// something editable, in any frame. Asked of the tab under the peek,
+    /// ⌘← in the peek's text box took that tab back.
     private func caretIn(_ event: NSEvent) -> Bool {
-        event.window?.firstResponder is NSTextView || browser.active?.typing == true
-            || browser.active?.built?.inputContext != nil
+        let page = (browser.peekInFront ? browser.peekTab : nil) ?? browser.active
+        return event.window?.firstResponder is NSTextView || page?.typing == true
+            || page?.built?.inputContext != nil
     }
 
     /// Menu items wearing a caret key — ⌘ or ⌥ with an arrow — set aside for

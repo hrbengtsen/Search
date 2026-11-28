@@ -4059,6 +4059,16 @@ final class Bench {
                 answer(["pinch": Double(pinch), "peek": browser.peekTab?.address?.absoluteString ?? ""])
                 return
             }
+            // "focus": the peek's page has the keys, as a click on it leaves
+            // them (PageView.handedAsClick).
+            if request["focus"] as? Bool == true {
+                guard let page = browser.peekTab?.built else { answer(["error": "no peek"]); return }
+                PageView.handedAsClick = true
+                page.window?.makeFirstResponder(page)
+                PageView.handedAsClick = false
+                answer(["keys": page.window?.firstResponder === page])
+                return
+            }
             // "js": run in the peek's page, in front or hidden.
             if let js = request["js"] as? String {
                 guard let page = browser.peekTab?.built else { answer(["error": "no peek"]); return }
