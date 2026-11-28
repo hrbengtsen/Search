@@ -5,8 +5,7 @@ import XCTest
 /// The switches on for everyone who never touched them (Drice, 25 Nov 2026):
 /// on with no line in the settings, off with a line saying off, and the
 /// reads outside Preferences agreeing. Most have no switch since 27 Nov
-/// 2026 (Retired): a test world still reads their line, which is what the
-/// first test sees; the retired test sees them as everyone else does.
+/// 2026 (Retired): their line is still read, as a choice made before.
 @MainActor
 final class DefaultsOnTests: XCTestCase {
     override class func setUp() {
@@ -89,8 +88,9 @@ final class DefaultsOnTests: XCTestCase {
     }
 
     /// Settings cut in half (27 Nov 2026): the switches it took out are
-    /// fixed, whatever line an earlier build left. Seen as everyone sees
-    /// Search, outside a test world (Retired.honoured off).
+    /// built in. Seen with lines not read (Retired.honoured off), whatever an
+    /// earlier build left: what someone who never touched them gets. Since
+    /// 28 Nov 2026 a line is read for everyone (testEarlierChoicesStand).
     static let retiredOn = ["tabs.undoReopens", "video.keys", "tabs.popupWindows", "tabs.frontBeside", "tabs.swipeBackCloses",
                             "reader.follows", "pages.capture", "sites.styles", "home.grid", Motion.lightKey, "float.minimize",
                             "pins.folders", "commandbar", "sidebar.player", "tabs.pinCounts", "tabs.newAfterLast",
@@ -133,9 +133,10 @@ final class DefaultsOnTests: XCTestCase {
 
         all.forEach(store.removeObject(forKey:))
         check(Preferences(), "no line")
+        XCTAssertTrue(Retired.earlier().isEmpty, "no group while lines aren't read")
         XCTAssertTrue(all.allSatisfy { store.object(forKey: $0) == nil }, "nothing written for a fixed switch")
 
-        // An old choice the other way: not followed, and left where it is.
+        // A line the other way, not read here: left where it is.
         Self.retiredOn.forEach { store.set(false, forKey: $0) }
         Self.retiredOff.forEach { store.set(true, forKey: $0) }
         let prefs = Preferences()
@@ -167,5 +168,132 @@ final class DefaultsOnTests: XCTestCase {
         let chosen = Preferences()
         XCTAssertFalse(chosen.inlinePredictions)
         XCTAssertEqual(UserDefaults.standard.object(forKey: Preferences.inlinePredictionsKey) as? Bool, false)
+    }
+
+    /// Every retired switch has its row in Your earlier choices, under the
+    /// value built in for it, and a property it sets.
+    func testEveryRetiredSwitchIsListed() {
+        let lines = Set(Retired.switches.flatMap { $0.key == "pins.keep" ? ["pins.home", "pins.peek"] : [$0.key] })
+        XCTAssertEqual(lines, Set(Self.retiredOn + Self.retiredOff))
+        XCTAssertEqual(Set(Retired.switches.filter { !$0.builtIn }.map(\.key)), Set(Self.retiredOff))
+        XCTAssertEqual(Retired.switches.count, Set(Retired.switches.map(\.key)).count, "one row each")
+        let prefs = Preferences()
+        for item in Retired.switches {
+            prefs.setRetired(item.key, !item.builtIn)
+            XCTAssertEqual(prefs.retired(item.key), !item.builtIn, item.key)
+            prefs.setRetired(item.key, item.builtIn)
+            XCTAssertEqual(prefs.retired(item.key), item.builtIn, item.key)
+        }
+    }
+
+    /// 28 Nov 2026 (Drice's "Show counts on pins", off long before, came
+    /// back on with the cut): a line someone left on a retired switch is
+    /// their choice and stands; no line is what is built in; Your earlier
+    /// choices lists only the switches set the other way, and putting one
+    /// back to what is built in takes its line away.
+    func testEarlierChoicesStand() {
+        let store = Store.settings
+        let all = Self.retiredOn + Self.retiredOff
+        let saved = Dictionary(uniqueKeysWithValues: all.map { ($0, store.object(forKey: $0)) })
+        let savedLowPower = Motion.testLowPower
+        defer {
+            Retired.honoured = true
+            for (key, value) in saved {
+                if let value { store.set(value, forKey: key) } else { store.removeObject(forKey: key) }
+            }
+            Motion.testLowPower = savedLowPower
+            _ = Preferences()
+        }
+        Retired.honoured = true
+        all.forEach(store.removeObject(forKey:))
+        let fresh = Preferences()
+        XCTAssertTrue(fresh.showsPinCounts && fresh.undoReopensTab && fresh.pinsKeepSite && fresh.meetPiP && MeetPiP.on)
+        XCTAssertFalse(fresh.showsReading || fresh.bounces || Swipe.bounces)
+        XCTAssertTrue(Retired.earlier().isEmpty, "never touched: no group")
+        XCTAssertTrue(all.allSatisfy { store.object(forKey: $0) == nil }, "nothing written")
+
+        // Lines saying what is built in: nothing to list.
+        Self.retiredOn.forEach { store.set(true, forKey: $0) }
+        Self.retiredOff.forEach { store.set(false, forKey: $0) }
+        XCTAssertTrue(Retired.earlier().isEmpty, "a line that agrees is no earlier choice")
+
+        // The case Drice met, alone.
+        all.forEach(store.removeObject(forKey:))
+        store.set(false, forKey: "tabs.pinCounts")
+        store.set(true, forKey: "pages.bounce")
+        var prefs = Preferences()
+        XCTAssertFalse(prefs.showsPinCounts, "pin counts turned off stay off")
+        XCTAssertTrue(prefs.bounces && Swipe.bounces, "bounce turned on stays on")
+        XCTAssertTrue(prefs.undoReopensTab, "the rest as built in")
+        XCTAssertEqual(Retired.earlier().map(\.key), ["tabs.pinCounts", "pages.bounce"])
+        XCTAssertEqual(Retired.earlier().first?.title, "Show counts on pins")
+        prefs.reread()
+        XCTAssertFalse(prefs.showsPinCounts, "read again, still off")
+
+        // Turned back on from the group: built in again, the line gone.
+        prefs.setRetired("tabs.pinCounts", true)
+        XCTAssertTrue(prefs.showsPinCounts)
+        XCTAssertNil(store.object(forKey: "tabs.pinCounts"))
+        XCTAssertEqual(Retired.earlier().map(\.key), ["pages.bounce"])
+        // Flipped the other way again from the group: a choice once more.
+        prefs.setRetired("tabs.pinCounts", false)
+        XCTAssertEqual(store.object(forKey: "tabs.pinCounts") as? Bool, false)
+
+        // Every switch set the other way: each followed, each listed.
+        Self.retiredOn.forEach { store.set(false, forKey: $0) }
+        Self.retiredOff.forEach { store.set(true, forKey: $0) }
+        prefs = Preferences()
+        XCTAssertFalse(prefs.undoReopensTab || prefs.videoKeys || VideoKeys.on || prefs.popupWindows
+                       || prefs.frontLinksBeside || prefs.swipeBackCloses || prefs.readerFollowsLook)
+        XCTAssertFalse(prefs.capturesPages || prefs.sitesStyles || SiteStyles.shared.on || prefs.homeGrid)
+        XCTAssertFalse(prefs.lightMotion || prefs.floatMinimizes || Float.minimizes || prefs.pinFolders)
+        XCTAssertFalse(prefs.commandBar || prefs.showsPlayer || prefs.showsPinCounts || prefs.newTabAfterLast)
+        XCTAssertFalse(prefs.meetPiP || MeetPiP.on || prefs.pinPreviews || prefs.holdsHistory || PageView.holdsHistory)
+        XCTAssertFalse(prefs.showsUpdateReady || prefs.pinsKeepSite || prefs.narrowsToIcons || prefs.recentInNewTab)
+        XCTAssertTrue(prefs.showsReading && prefs.tabsGive && prefs.readsTwins && prefs.fieldHidesPage
+                      && prefs.tabClickAddressOnly && prefs.bounces && Swipe.bounces)
+        Motion.testLowPower = true
+        XCTAssertFalse(Motion.savingPower, "Low Power motion turned off stays off")
+        store.set("dark", forKey: "reader.look")
+        XCTAssertEqual(Reader.look, .light, "reading mode that didn't follow the look still doesn't")
+        store.removeObject(forKey: "reader.look")
+        XCTAssertEqual(Set(Retired.earlier().map(\.key)), Set(Retired.switches.map(\.key)))
+
+        // Pins keep their site: one of its two lines turned off is off.
+        all.forEach(store.removeObject(forKey:))
+        store.set(false, forKey: "pins.home")
+        XCTAssertFalse(Preferences().pinsKeepSite)
+        XCTAssertEqual(Retired.earlier().map(\.key), ["pins.keep"])
+        store.set(true, forKey: "pins.peek")
+        XCTAssertTrue(Preferences().pinsKeepSite, "either on is on")
+        XCTAssertTrue(Retired.earlier().isEmpty)
+    }
+
+    /// Another Mac's line on a retired switch is never taken outside a test
+    /// world: a Mac that never had it keeps what is built in, and a choice
+    /// made here isn't overwritten.
+    func testRetiredLinesDontComeFromAnotherMac() {
+        let store = Store.settings
+        let saved = ["pins.home", "pins.peek"].map { ($0, store.object(forKey: $0)) }
+        defer {
+            Retired.synced = Store.testing
+            for (key, value) in saved {
+                if let value { store.set(value, forKey: key) } else { store.removeObject(forKey: key) }
+            }
+            _ = Preferences()
+        }
+        XCTAssertTrue(Retired.honoured, "lines are read outside tests too")
+        store.removeObject(forKey: "pins.home")
+        store.removeObject(forKey: "pins.peek")
+        let prefs = Preferences()
+        Retired.synced = false
+        SyncSettings.apply(["set:pins.home": "false"], to: prefs)
+        XCTAssertTrue(prefs.pinsGoHome, "another Mac's off isn't taken")
+        XCTAssertNil(store.object(forKey: "pins.home"), "and nothing is written")
+        store.set(false, forKey: "pins.home")
+        let chose = Preferences()
+        SyncSettings.apply(["set:pins.home": "true"], to: chose)
+        XCTAssertFalse(chose.pinsGoHome, "a choice made here stands")
+        XCTAssertEqual(store.object(forKey: "pins.home") as? Bool, false)
     }
 }

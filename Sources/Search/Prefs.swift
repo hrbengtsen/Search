@@ -146,23 +146,147 @@ enum SidebarDefault {
 }
 
 /// The switches Settings no longer has (27 Nov 2026, "Settings are half
-/// as long"): their behaviour is fixed, on or off. A line one of them left in
-/// someone's settings is no longer read, and is left where it is, so a
-/// build from before still finds it. Only a test world reads it still,
-/// so the probes and tests written against the old switch keep working.
+/// as long"): their behaviour is built in, on or off, for everyone who never
+/// touched them. A line one of them left in someone's settings is a choice
+/// that person made, and it stands (28 Nov 2026: Drice's "Show counts on
+/// pins", turned off long before, came back on with the cut). Nothing is
+/// written for anyone who never touched one. Settings › General › Advanced
+/// lists the choices that differ from what is built in ("Your earlier
+/// choices"), so they can still be changed.
 enum Retired {
-    /// Whether those lines are read: in a test world only. A test sets it
-    /// off to see Search as everyone else does.
-    nonisolated(unsafe) static var honoured = Store.testing
+    /// Whether those lines are read: always, but a test sets it off to see
+    /// Search as someone who never touched a switch does.
+    nonisolated(unsafe) static var honoured = true
 
-    /// On for everyone. A test world reads the line, on without one.
+    /// Whether another Mac's line is taken (Sync): in a test world only. A
+    /// Mac that never had the line keeps what is built in, and its own line
+    /// is never overwritten from elsewhere, since neither Mac has a switch
+    /// that would send a fresh choice.
+    nonisolated(unsafe) static var synced = Store.testing
+
+    /// On unless a line says off.
     nonisolated static func on(_ key: String, _ store: UserDefaults = Store.settings) -> Bool {
         honoured ? store.object(forKey: key) as? Bool ?? true : true
     }
 
-    /// Off for everyone. A test world reads the line, off without one.
+    /// Off unless a line says on.
     nonisolated static func off(_ key: String, _ store: UserDefaults = Store.settings) -> Bool {
         honoured ? store.bool(forKey: key) : false
+    }
+
+    /// A switch that was taken out, as it was titled in Settings.
+    struct Switch: Identifiable {
+        /// Its line (pins.keep: pins.home and pins.peek, read together).
+        let key: String
+        let icon: String
+        let title: String
+        /// What is built in for everyone who never touched it.
+        let builtIn: Bool
+        var id: String { key }
+    }
+
+    static let switches: [Switch] = [
+        .init(key: "tabs.undoReopens", icon: "arrow.uturn.backward.circle", title: "⌘Z reopens a closed tab", builtIn: true),
+        .init(key: "video.keys", icon: "space", title: "Space and arrow keys control videos", builtIn: true),
+        .init(key: "tabs.popupWindows", icon: "macwindow.on.rectangle", title: "Open sized pop-ups in small windows", builtIn: true),
+        .init(key: "tabs.frontBeside", icon: "arrow.turn.down.right", title: "Links opened in front go beside their page", builtIn: true),
+        .init(key: "tabs.swipeBackCloses", icon: "xmark.circle", title: "Swipe back closes a tab a link opened", builtIn: true),
+        .init(key: "reader.follows", icon: "circle.righthalf.filled", title: "Reading mode follows light and dark", builtIn: true),
+        .init(key: "pages.capture", icon: "camera.viewfinder", title: "Capture pages", builtIn: true),
+        .init(key: "sites.styles", icon: "paintbrush", title: "Your own style for a site", builtIn: true),
+        .init(key: "home.grid", icon: "square.grid.4x3.fill", title: "Show the Home bookmarks on a new tab", builtIn: true),
+        .init(key: "motion.light", icon: "leaf", title: "Save power in Low Power Mode", builtIn: true),
+        .init(key: "float.minimize", icon: "minus.circle", title: "Minimize the floating video", builtIn: true),
+        .init(key: "pins.folders", icon: "folder", title: "Folders in pinned rows", builtIn: true),
+        .init(key: "pins.keep", icon: "pin.circle", title: "Pins keep their site", builtIn: true),
+        .init(key: "pins.preview", icon: "rectangle.on.rectangle", title: "Preview pins on hover", builtIn: true),
+        .init(key: "commandbar", icon: "chevron.right.square", title: "Address bar commands", builtIn: true),
+        .init(key: "newtab.recent", icon: "clock.arrow.circlepath", title: "Recent places in the new tab", builtIn: true),
+        .init(key: "sidebar.player", icon: "play.circle", title: "What's playing in other tabs", builtIn: true),
+        .init(key: "sidebar.narrowIcons", icon: "rectangle.leftthird.inset.filled", title: "Narrow to icons", builtIn: true),
+        .init(key: "tabs.pinCounts", icon: "app.badge", title: "Show counts on pins", builtIn: true),
+        .init(key: "tabs.newAfterLast", icon: "plus.rectangle.on.rectangle", title: "Leave a new tab when the last tab closes", builtIn: true),
+        .init(key: "meet.pip", icon: "person.2.crop.square.stack", title: "Google Meet's own mini window", builtIn: true),
+        .init(key: "swipe.history", icon: "hand.draw", title: "Hold a swipe to pick from history", builtIn: true),
+        .init(key: "update.notice", icon: "arrow.down.circle", title: "Show when an update is ready", builtIn: true),
+        .init(key: "tabs.reading", icon: "text.line.first.and.arrowtriangle.forward", title: "Show how far you've read", builtIn: false),
+        .init(key: "tabs.give", icon: "hand.point.up.left", title: "Tabs give when pressed", builtIn: false),
+        .init(key: "reader.twins", icon: "doc.text", title: "Read the site's own Markdown", builtIn: false),
+        .init(key: "field.hidesPage", icon: "rectangle.fill", title: "Hide the page behind the field", builtIn: false),
+        .init(key: "tabs.clickAddressOnly", icon: "character.cursor.ibeam", title: "Clicking the tab you're on edits its address only", builtIn: false),
+        .init(key: "pages.bounce", icon: "arrow.up.and.down", title: "Bounce at the top and bottom", builtIn: false),
+    ]
+
+    /// The choice a line holds, nil where there is none. pins.keep reads its
+    /// two lines as its switch did: on when either is on, off when one was
+    /// turned off and the other never set.
+    nonisolated static func chosen(_ key: String, _ store: UserDefaults = Store.settings) -> Bool? {
+        if key == "pins.keep" {
+            let home = store.object(forKey: "pins.home") as? Bool
+            let peek = store.object(forKey: "pins.peek") as? Bool
+            return home == nil && peek == nil ? nil : (home ?? false) || (peek ?? false)
+        }
+        return store.object(forKey: key) as? Bool
+    }
+
+    /// The switches whose line says otherwise than what is built in: the
+    /// "Your earlier choices" rows. None for anyone who never touched one.
+    static func earlier(_ store: UserDefaults = Store.settings) -> [Switch] {
+        guard honoured else { return [] }
+        return switches.filter { item in chosen(item.key, store).map { $0 != item.builtIn } ?? false }
+    }
+}
+
+@MainActor
+extension Preferences {
+    /// A retired switch as it stands here (Retired.switches).
+    func retired(_ key: String) -> Bool {
+        retiredPath(key).map { self[keyPath: $0] } ?? Retired.on(key)
+    }
+
+    /// Sets a retired switch from "Your earlier choices", through its own
+    /// didSet: what it does happens and its line is written. Put back to
+    /// what is built in, its line goes, as if it had never been touched.
+    func setRetired(_ key: String, _ on: Bool) {
+        guard let path = retiredPath(key) else { return }
+        self[keyPath: path] = on
+        guard let item = Retired.switches.first(where: { $0.key == key }), on == item.builtIn else { return }
+        for line in key == "pins.keep" ? ["pins.home", "pins.peek"] : [key] { store.removeObject(forKey: line) }
+    }
+
+    private func retiredPath(_ key: String) -> ReferenceWritableKeyPath<Preferences, Bool>? {
+        switch key {
+        case "tabs.undoReopens": return \.undoReopensTab
+        case "video.keys": return \.videoKeys
+        case "tabs.popupWindows": return \.popupWindows
+        case "tabs.frontBeside": return \.frontLinksBeside
+        case "tabs.swipeBackCloses": return \.swipeBackCloses
+        case "reader.follows": return \.readerFollowsLook
+        case "pages.capture": return \.capturesPages
+        case "sites.styles": return \.sitesStyles
+        case "home.grid": return \.homeGrid
+        case Motion.lightKey: return \.lightMotion
+        case "float.minimize": return \.floatMinimizes
+        case "pins.folders": return \.pinFolders
+        case "pins.keep": return \.pinsKeepSite
+        case "pins.preview": return \.pinPreviews
+        case "commandbar": return \.commandBar
+        case "newtab.recent": return \.recentInNewTab
+        case "sidebar.player": return \.showsPlayer
+        case "sidebar.narrowIcons": return \.narrowsToIcons
+        case "tabs.pinCounts": return \.showsPinCounts
+        case "tabs.newAfterLast": return \.newTabAfterLast
+        case "meet.pip": return \.meetPiP
+        case "swipe.history": return \.holdsHistory
+        case UpdateNotice.key: return \.showsUpdateReady
+        case "tabs.reading": return \.showsReading
+        case "tabs.give": return \.tabsGive
+        case "reader.twins": return \.readsTwins
+        case "field.hidesPage": return \.fieldHidesPage
+        case "tabs.clickAddressOnly": return \.tabClickAddressOnly
+        case "pages.bounce": return \.bounces
+        default: return nil
+        }
     }
 }
 
@@ -1460,7 +1584,7 @@ final class Preferences: ObservableObject {
         foldsToIcons = store.bool(forKey: "sidebar.foldIcons")
         narrowsToIcons = Retired.on("sidebar.narrowIcons", store)
         narrowed = store.bool(forKey: "sidebar.narrowed")
-        // Always on, with no switch since 27 Nov 2026 (see Retired).
+        // Built in, with no switch since 27 Nov 2026; a choice made before stands (see Retired).
         showsPlayer = Retired.on("sidebar.player", store)
         let width = store.object(forKey: "sidebar.width") as? Double ?? Double(Metrics.side)
         sideWidth = min(Metrics.sideMax, max(Metrics.sideMin, CGFloat(width)))
@@ -1487,7 +1611,7 @@ final class Preferences: ObservableObject {
             .flatMap { try? JSONDecoder().decode([Keyword].self, from: $0) } ?? []
         tabsGive = Retired.off("tabs.give", store)
         awakeSites = Set(store.stringArray(forKey: "tabs.awakeSites") ?? [])
-        // Always on, with no switch since 27 Nov 2026 (see Retired).
+        // Built in, with no switch since 27 Nov 2026; a choice made before stands (see Retired).
         popupWindows = Retired.on("tabs.popupWindows", store)
         popupSites = Set(store.stringArray(forKey: "privacy.popupSites") ?? [])
         sleepsTabs = store.object(forKey: "tabs.sleep") as? Bool ?? true
@@ -1502,20 +1626,20 @@ final class Preferences: ObservableObject {
         sleepPace = SleepPace.chosen
         showsLoadingLine = store.bool(forKey: "fold.loadingLine")
         lazyTabs = store.bool(forKey: "tabs.lazy")
-        // Always on, with no switch since 27 Nov 2026 (see Retired).
+        // Built in, with no switch since 27 Nov 2026; a choice made before stands (see Retired).
         newTabAfterLast = Retired.on("tabs.newAfterLast", store)
         keepWindowAfterLast = store.bool(forKey: "tabs.keepWindow")
         closeGoesBack = store.bool(forKey: "tabs.closeGoesBack")
-        // Always on, with no switch since 27 Nov 2026 (see Retired).
+        // Built in, with no switch since 27 Nov 2026; a choice made before stands (see Retired).
         undoReopensTab = Retired.on("tabs.undoReopens", store)
-        // Always on, with no switch since 27 Nov 2026 (see Retired).
+        // Built in, with no switch since 27 Nov 2026; a choice made before stands (see Retired).
         homeGrid = Retired.on("home.grid", store)
         homeTiles = store.bool(forKey: "home.tiles")
         switcherBehindFirst = store.bool(forKey: "tabs.switcherBehindFirst")
         switcherLeavesOutPins = store.bool(forKey: "tabs.switcherLeavesOutPins")
-        // Always on, with no switch since 27 Nov 2026 (see Retired).
+        // Built in, with no switch since 27 Nov 2026; a choice made before stands (see Retired).
         frontLinksBeside = Retired.on("tabs.frontBeside", store)
-        // Always on, with no switch since 27 Nov 2026 (see Retired).
+        // Built in, with no switch since 27 Nov 2026; a choice made before stands (see Retired).
         swipeBackCloses = Retired.on("tabs.swipeBackCloses", store)
         mirrorsTabs = store.bool(forKey: "tabs.mirror")
         newTabPlace = store.string(forKey: "tabs.newPlace").flatMap(NewTabPlace.init(rawValue:)) ?? .next
@@ -1525,7 +1649,7 @@ final class Preferences: ObservableObject {
         siteNotifications = store.object(forKey: "notifications.ask") as? Bool ?? true
         showsTabShortcuts = store.bool(forKey: "tabs.shortcuts")
         showsReading = Retired.off("tabs.reading", store)
-        // Always on, with no switch since 27 Nov 2026 (see Retired).
+        // Built in, with no switch since 27 Nov 2026; a choice made before stands (see Retired).
         showsPinCounts = Retired.on("tabs.pinCounts", store)
         // On by default, but off in test runs unless a test asks, so no
         // other probe's pages on 127.0.0.1 wear the bar.
@@ -1604,23 +1728,20 @@ final class Preferences: ObservableObject {
         spacesOnCommand = store.bool(forKey: Preferences.spacesOnCommandKey)
         profilesInOneWindow = store.bool(forKey: "profiles.oneWindow")
         listsPins = store.bool(forKey: "pins.list")
-        // Always on, with no switch since 27 Nov 2026 (see Retired).
+        // Built in, with no switch since 27 Nov 2026; a choice made before stands (see Retired).
         pinFolders = Retired.on("pins.folders", store)
         pinFolderPeek = store.bool(forKey: "pins.folderPeek")
         pinCommandOpensTab = store.bool(forKey: "pins.commandNewTab")
         pinLinksOpenTabs = store.bool(forKey: "pins.linksNewTab")
-        // "Pins keep their site": always on, with no switch since 27 Nov
-        // 2026 (see Retired). A test world still reads its two keys as the
-        // switch did: on when either is on or neither was touched, off when
-        // one was turned off and the other never set. Nothing is written here.
-        let home = store.object(forKey: "pins.home") as? Bool
-        let peek = store.object(forKey: "pins.peek") as? Bool
-        let keepsSite = !Retired.honoured || (home == nil && peek == nil ? true : (home ?? false) || (peek ?? false))
+        // "Pins keep their site": built in, with no switch since 27 Nov 2026
+        // (see Retired). Its two keys are read as the switch read them (see
+        // Retired.chosen). Nothing is written here.
+        let keepsSite = !Retired.honoured || (Retired.chosen("pins.keep", store) ?? true)
         pinsGoHome = keepsSite
         ai = AI.shipped && store.bool(forKey: "ai")
         aiProvider = store.string(forKey: "ai.provider").flatMap(AIProvider.init(rawValue:))
         aiModels = store.dictionary(forKey: "ai.models") as? [String: String] ?? [:]
-        // Always on, with no switch since 27 Nov 2026 (see Retired).
+        // Built in, with no switch since 27 Nov 2026; a choice made before stands (see Retired).
         commandBar = Retired.on("commandbar", store)
         handoff = store.bool(forKey: "handoff")
         updateNote = store.object(forKey: Self.updateNoteKey) as? Bool ?? true
@@ -1633,7 +1754,7 @@ final class Preferences: ObservableObject {
         recentInNewTab = Retired.on("newtab.recent", store)
         arcTabPopup = store.bool(forKey: "newtab.arc")
         returnTakesTop = store.bool(forKey: "field.top")
-        // Always on, with no switch since 27 Nov 2026 (see Retired).
+        // Built in, with no switch since 27 Nov 2026; a choice made before stands (see Retired).
         let history = Retired.on("swipe.history", store)
         holdsHistory = history
         PageView.holdsHistory = history
@@ -1642,7 +1763,7 @@ final class Preferences: ObservableObject {
         let flicks = store.object(forKey: "float.flicks") as? Bool ?? true
         floatFlicks = flicks
         Float.flicks = flicks
-        // Always on, with no switch since 27 Nov 2026 (see Retired).
+        // Built in, with no switch since 27 Nov 2026; a choice made before stands (see Retired).
         let minimizes = Retired.on("float.minimize", store)
         floatMinimizes = minimizes
         Float.minimizes = minimizes
@@ -1666,7 +1787,7 @@ final class Preferences: ObservableObject {
         backspaceGoesBack = store.bool(forKey: Preferences.backspaceKey)
         pinsPeek = keepsSite
         readsTwins = Retired.off("reader.twins", store)
-        // Always on, with no switch since 27 Nov 2026 (see Retired).
+        // Built in, with no switch since 27 Nov 2026; a choice made before stands (see Retired).
         readerFollowsLook = Retired.on("reader.follows", store)
         littleLinks = store.bool(forKey: Preferences.littleKey)
         linksFindTabs = store.bool(forKey: "links.little.tabs")
@@ -1689,11 +1810,11 @@ final class Preferences: ObservableObject {
         let dusk = store.bool(forKey: "pages.dusk")
         darkensPages = dusk
         Dusk.shared.on = dusk
-        // Always on, with no switch since 27 Nov 2026 (see Retired).
+        // Built in, with no switch since 27 Nov 2026; a choice made before stands (see Retired).
         capturesPages = Retired.on("pages.capture", store)
         copiesCapturesOnly = store.bool(forKey: "pages.capture.copyOnly")
         hidingShapes = store.bool(forKey: "hiding.shapes")
-        // Always on, with no switch since 27 Nov 2026 (see Retired).
+        // Built in, with no switch since 27 Nov 2026; a choice made before stands (see Retired).
         let styles = Retired.on("sites.styles", store)
         sitesStyles = styles
         SiteStyles.shared.on = styles
@@ -1702,7 +1823,7 @@ final class Preferences: ObservableObject {
         let scrolls = store.bool(forKey: "autoscroll")
         autoScroll = scrolls
         AutoScroll.on = scrolls
-        // Always on, with no switch since 27 Nov 2026 (see Retired).
+        // Built in, with no switch since 27 Nov 2026; a choice made before stands (see Retired).
         let videoKeys = Retired.on("video.keys", store)
         self.videoKeys = videoKeys
         VideoKeys.on = videoKeys
@@ -1728,7 +1849,7 @@ final class Preferences: ObservableObject {
             ?? .never
         fastPages = fast
         FrameRate.mode = fast
-        // Always on, with no switch since 27 Nov 2026 (see Retired).
+        // Built in, with no switch since 27 Nov 2026; a choice made before stands (see Retired).
         lightMotion = Retired.on(Motion.lightKey, store)
         animatesDownloads = store.bool(forKey: "motion.downloads")
         let instant = store.bool(forKey: Motion.instantKey)

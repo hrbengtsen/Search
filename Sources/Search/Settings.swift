@@ -53,6 +53,10 @@ struct SettingsPanel: View {
     @State private var lit: String?
     /// The pages whose Advanced is open. Folded each time Settings opens.
     @State private var advancedOpen: Set<Page> = []
+    /// The retired switches whose line says otherwise than what is built in
+    /// (Retired.earlier), as they were when Settings opened: a row stays
+    /// while its switch is flipped, and goes the next time.
+    @State private var earlier = Retired.earlier()
     /// What Set Up Like Arc changed, for Undo.
     @ObservedObject private var likeArc = LikeArc.shared
     /// What's New's dot, until it's opened once after an update.
@@ -557,7 +561,8 @@ struct SettingsPanel: View {
     @ViewBuilder
     private func advanced(of page: Page) -> some View {
         let all = SettingsIndex.advanced(of: page)
-        if !all.isEmpty {
+        let earlier = page == .general ? earlier : []
+        if !all.isEmpty || !earlier.isEmpty {
             let open = advancedOpen.contains(page)
             VStack(alignment: .leading, spacing: 8) {
                 Button {
@@ -572,7 +577,7 @@ struct SettingsPanel: View {
                         Text("ADVANCED")
                             .font(.system(size: 10.5, weight: .semibold))
                             .tracking(0.5)
-                        Text("\(all.filter(shown).count)")
+                        Text("\(all.filter(shown).count + earlier.count)")
                             .font(.system(size: 10, weight: .medium))
                             .foregroundStyle(Palette.muted)
                     }
@@ -585,8 +590,28 @@ struct SettingsPanel: View {
                 if open {
                     Card { rows(all.filter(shown), searched: false) }
                         .transition(.opacity)
+                    if !earlier.isEmpty {
+                        earlierChoices(earlier)
+                            .padding(.top, 10)
+                            .transition(.opacity)
+                    }
                 }
             }
+        }
+    }
+
+    private func earlierChoices(_ switches: [Retired.Switch]) -> some View {
+        EarlierChoices(switches: switches, prefs: prefs, lit: lit)
+    }
+
+    /// Earlier choices whose title or the group's own words hold the words
+    /// typed, for the find field.
+    private var earlierHits: [Retired.Switch] {
+        let words = query.lowercased().split(separator: " ").map(String.init)
+        guard !words.isEmpty else { return [] }
+        return earlier.filter { item in
+            let text = (item.title + " your earlier choices advanced retired old").lowercased()
+            return words.allSatisfy { text.contains($0) }
         }
     }
 
@@ -634,8 +659,34 @@ struct SettingsPanel: View {
     @ViewBuilder
     private var results: some View {
         let all = hits
-        if all.isEmpty {
+        let mine = earlierHits
+        if all.isEmpty && mine.isEmpty {
             Card { Nothing("No setting called that. Try other words, like dark, tabs or video") }
+        }
+        if !mine.isEmpty {
+            VStack(alignment: .leading, spacing: 8) {
+                Button {
+                    query = ""
+                    page = .general
+                    advancedOpen.insert(.general)
+                    lit = "earlier." + (mine.first?.key ?? "")
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.4) { withAnimation(Motion.quick) { lit = nil } }
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "clock.arrow.circlepath").font(.system(size: 10.5, weight: .medium))
+                        Text("General  ›  Your earlier choices".uppercased())
+                            .font(.system(size: 10.5, weight: .semibold))
+                            .tracking(0.4)
+                        Image(systemName: "arrow.right").font(.system(size: 9, weight: .semibold)).opacity(0.6)
+                    }
+                    .foregroundStyle(Palette.muted)
+                    .padding(.leading, 2)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("Open General at Your earlier choices")
+                earlierChoices(mine)
+            }
         }
         // What is always there and has nothing to set comes apart, after
         // the settings: among them its row with no switch read as a setting
@@ -1571,6 +1622,31 @@ struct GroupBlock<Content: View>: View {
 /// One setting: its icon in a soft tile, what it is, one line on what it
 /// does (the rest behind the (i)), and its control. A wide control goes
 /// under the words.
+/// The switches taken out on 27 Nov 2026 that this Mac had set the other
+/// way: each its old title and its own switch, so a choice kept can still be
+/// changed. Nobody else sees the group (Retired.earlier).
+struct EarlierChoices: View {
+    let switches: [Retired.Switch]
+    @ObservedObject var prefs: Preferences
+    var lit: String? = nil
+
+    var body: some View {
+        GroupBlock(title: "Your earlier choices", icon: "clock.arrow.circlepath") {
+            Card {
+                ForEach(Array(switches.enumerated()), id: \.element.id) { index, item in
+                    if index > 0 { Rule() }
+                    SettingRow(icon: item.icon, title: item.title,
+                               detail: "Now \(item.builtIn ? "on" : "off") for everyone; your choice is kept",
+                               lit: lit == "earlier." + item.key) {
+                        Switch(on: Binding(get: { prefs.retired(item.key) }, set: { prefs.setRetired(item.key, $0) }))
+                    }
+                    .id("earlier." + item.key)
+                }
+            }
+        }
+    }
+}
+
 struct SettingRow<Control: View>: View {
     let icon: String
     let title: String

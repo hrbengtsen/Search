@@ -96,7 +96,7 @@ enum SyncSettings {
     /// taken from another Mac outside a test world.
     private static func retired(_ setting: Setting) -> Setting {
         Setting(key: setting.key, read: setting.read, write: { prefs, text in
-            if Retired.honoured { setting.write(prefs, text) }
+            if Retired.synced { setting.write(prefs, text) }
         })
     }
 

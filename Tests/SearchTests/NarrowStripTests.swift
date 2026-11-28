@@ -24,17 +24,18 @@ final class NarrowStripTests: XCTestCase {
         for (key, value) in saved { Store.settings.set(value, forKey: key) }
     }
 
-    /// On for everyone, with no switch, since 27 Nov 2026 (Retired): an
-    /// old off line is no longer followed. A test world still reads it, so
-    /// the column's own tests can draw titles under the line.
+    /// On for everyone who never touched it, with no switch, since 27 Nov
+    /// 2026 (Retired): an old off line is a choice and is followed (28 Nov
+    /// 2026), which also lets the column's own tests draw titles under the
+    /// line; with lines not read, it is on.
     func testOnForEveryone() {
         XCTAssertTrue(Preferences().narrowsToIcons)
         Store.settings.set(false, forKey: "sidebar.narrowIcons")
-        XCTAssertFalse(Preferences().narrowsToIcons, "a test world reads the old line")
+        XCTAssertFalse(Preferences().narrowsToIcons, "an old off line is followed")
         Retired.honoured = false
         defer { Retired.honoured = true }
         let prefs = Preferences()
-        XCTAssertTrue(prefs.narrowsToIcons, "everyone else: on, whatever the line says")
+        XCTAssertTrue(prefs.narrowsToIcons, "lines not read: on")
         prefs.sideWidth = Metrics.sideMin
         XCTAssertEqual(prefs.columnWidth, Metrics.narrowLine)
     }
