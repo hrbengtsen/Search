@@ -353,6 +353,13 @@ final class StageView: NSView {
     /// Chrome keep sending. Kept in the window, the page carries on as it
     /// did in front. Only pages on a call: any other tab still leaves the
     /// window, and is slowed and put to sleep as before.
+    ///
+    /// And pages playing music, kept the same way while they play and for
+    /// MediaKeys.wait after, the gap before the next track (idea 997). Out
+    /// of the window, the track playing goes on but the next one doesn't
+    /// start: Spotify's stalls and fails ("Media failed to decode"), its
+    /// player broken until the page is reloaded, as in Safari. Never a page
+    /// with a video of its own playing (see `playsSound`).
     private var calls: [ObjectIdentifier: CallWatch] = [:]
 
     /// Whether this page is using the camera, the microphone or the screen.
@@ -365,7 +372,18 @@ final class StageView: NSView {
         return false
     }
 
-    /// Whether this page is one kept here unseen for its call.
+    /// Whether this page is making sound, as the tab's speaker hears it, or
+    /// went quiet less than MediaKeys.wait ago (Tab.hushing), with no video
+    /// of its own playing: music, not a film. A video with sound kept here
+    /// would go on painting under the tab in front; it floats, or leaves
+    /// the window, as before.
+    static func playsSound(_ view: NSView) -> Bool {
+        guard let web = view as? WKWebView,
+              let tab = (web.navigationDelegate as? Browser)?.anyTab(for: web) else { return false }
+        return (tab.noisy || tab.hushing) && !tab.playingVideo
+    }
+
+    /// Whether this page is one kept here unseen for its call or its sound.
     func holdsCall(_ view: NSView) -> Bool {
         calls[ObjectIdentifier(view)]?.web === view
     }
@@ -378,7 +396,12 @@ final class StageView: NSView {
     func letGo(_ page: NSView) {
         guard parting === page else { return }
         parting = nil
-        if page.superview === self, page !== wanted { page.removeFromSuperview() }
+        if page.superview === self, page !== wanted {
+            // Nothing floated out of it, and it plays music: kept, as a
+            // tab behind playing music is.
+            if Self.playsSound(page) { return hold(page) }
+            page.removeFromSuperview()
+        }
         page.alphaValue = 1
     }
 
@@ -646,7 +669,7 @@ final class StageView: NSView {
                 view.alphaValue = 0
                 continue
             }
-            if Self.onCall(view) {
+            if Self.onCall(view) || Self.playsSound(view) {
                 hold(view)
                 continue
             }
@@ -665,9 +688,10 @@ final class StageView: NSView {
         if landed, let window, let wanted, wanted.superview === self, window.firstResponder === window {
             window.makeFirstResponder(wanted)
         }
-        // Calls that ended, or pages that went elsewhere, are watched no more.
+        // Calls and music that ended, or pages that went elsewhere, are watched no more.
         for (key, watch) in calls {
-            guard let web = watch.web, web.superview === self, web !== wanted, Self.onCall(web) else {
+            guard let web = watch.web, web.superview === self, web !== wanted,
+                  Self.onCall(web) || Self.playsSound(web) else {
                 watch.stop()
                 calls[key] = nil
                 continue
@@ -817,12 +841,14 @@ final class StageView: NSView {
     }
 }
 
-/// Tells a stage when a page it keeps for its call stops capturing, so the
-/// page leaves the window as any tab behind does. WebKit's camera and
-/// microphone states are public and observable; its screen's is asked for
-/// by name, only where it answers to it.
+/// Tells a stage when a page it keeps for its call stops capturing, or one
+/// kept for its sound has been quiet long enough, so the page leaves the
+/// window as any tab behind does. WebKit's camera and microphone states are
+/// public and observable; its screen's and its sound's (AudioWatch) are
+/// asked for by name, only where it answers to them.
 final class CallWatch: NSObject {
-    private static let keys = ["cameraCaptureState", "microphoneCaptureState", "_displayCaptureState"]
+    private static let sound = "_isPlayingAudio"
+    private static let keys = ["cameraCaptureState", "microphoneCaptureState", "_displayCaptureState", sound]
     private(set) weak var web: WKWebView?
     private var watching: [String] = []
     private let changed: () -> Void
@@ -835,6 +861,14 @@ final class CallWatch: NSObject {
             web.addObserver(self, forKeyPath: key, options: [], context: nil)
             watching.append(key)
         }
+        later()
+    }
+
+    /// Kept quiet, in the gap between two tracks, a page that never plays
+    /// the next one says nothing more: asked again once its quiet is up,
+    /// from when it was kept or its sound last changed.
+    private func later() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + MediaKeys.wait + 0.5) { [weak self] in self?.changed() }
     }
 
     func stop() {
@@ -847,6 +881,7 @@ final class CallWatch: NSObject {
     override func observeValue(forKeyPath keyPath: String?, of object: Any?,
                                change: [NSKeyValueChangeKey: Any]?, context: UnsafeMutableRawPointer?) {
         DispatchQueue.main.async { [weak self] in self?.changed() }
+        if keyPath == Self.sound { later() }
     }
 }
 

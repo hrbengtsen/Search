@@ -777,7 +777,9 @@ final class Tab: ObservableObject, Identifiable, HandsKeysBack {
     /// Counting down once the page's sound stops, to give the media keys
     /// back (see MediaKeys.swift). One at most.
     private var quiet: Timer?
-    /// For the bench.
+    /// Gone quiet less than MediaKeys.wait ago. The bench's, and the
+    /// stage's, which keeps a tab behind through the gap between two
+    /// tracks (StageView.playsSound).
     var hushing: Bool { quiet != nil }
     private let shop = StoreRelay()
     private let iconChanges = IconRelay()
